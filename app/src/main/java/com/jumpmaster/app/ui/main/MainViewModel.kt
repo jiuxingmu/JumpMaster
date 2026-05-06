@@ -3,6 +3,7 @@ package com.jumpmaster.app.ui.main
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
+import android.util.Log
 import androidx.camera.core.ImageProxy
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -24,6 +25,10 @@ class MainViewModel @Inject constructor(
     private val poseLandmarkerFactory: PoseLandmarkerFactory,
 ) : ViewModel() {
 
+    companion object {
+        private const val TAG = "JumpMasterPose"
+    }
+
     private val detector = CameraJumpDetector()
 
     private val _jumpCount = MutableStateFlow(0)
@@ -32,6 +37,7 @@ class MainViewModel @Inject constructor(
     private val _hint = MutableStateFlow<String>("面向摄像头开始做跳跃 Demo")
     val hint: StateFlow<String> = _hint.asStateFlow()
     private var frameCounter: Int = 0
+    private var noPoseStreak: Int = 0
 
     init {
         viewModelScope.launch {
@@ -49,7 +55,9 @@ class MainViewModel @Inject constructor(
         val landmarker =
             runCatching { poseLandmarkerFactory.acquire() }.getOrElse {
                 imageProxy.close()
-                _hint.value = "Pose 模型初始化失败：${it.message ?: it.javaClass.simpleName}"
+                val msg = it.message ?: it.javaClass.simpleName
+                Log.e(TAG, "PoseLandmarker acquire failed: $msg", it)
+                _hint.value = "Pose 模型初始化失败：$msg"
                 return
             }
 
@@ -97,6 +105,7 @@ class MainViewModel @Inject constructor(
         val detection: PoseLandmarkerResult? =
             runCatching { landmarker.detectForVideo(mpImage, stampMs) }
                 .onFailure {
+                    Log.e(TAG, "detectForVideo failed: ${it.message}", it)
                     _hint.value = "姿态推断异常：${it.message ?: it.javaClass.simpleName}"
                 }
                 .getOrNull()
@@ -106,22 +115,51 @@ class MainViewModel @Inject constructor(
 
         val hipY = detection?.hipAverageY()
         if (hipY == null) {
+            frameCounter += 1
+            noPoseStreak += 1
+            if (noPoseStreak >= 25) {
+                detector.reset()
+                noPoseStreak = 0
+                Log.w(TAG, "frame=$frameCounter no_pose_streak_reset")
+            }
+            Log.w(TAG, "frame=$frameCounter no_pose hipAvg=null")
             _hint.value = "未检测到人体姿态，尝试调整取景范围"
             return
         }
 
-        detector.onRawHipY(hipY, SystemClock.elapsedRealtime())
+        if (hipY !in 0f..1.2f) {
+            frameCounter += 1
+            noPoseStreak += 1
+            Log.w(TAG, "frame=$frameCounter hip_out_of_range raw=$hipY")
+            _hint.value = "姿态值异常（hipY=$hipY），忽略该帧"
+            return
+        }
+        noPoseStreak = 0
+
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val counted = detector.onRawHipY(hipY, nowElapsed)
         frameCounter += 1
+
+        val hipF = detector.lastFilteredY
+        val base = detector.lastBaselineY
+        val delta = detector.lastDeltaThreshold
+        val diff =
+            if (!hipF.isNaN() && !base.isNaN()) {
+                base - hipF
+            } else {
+                Float.NaN
+            }
+
+        Log.d(
+            TAG,
+            "frame=$frameCounter tsMs=$stampMs hipRaw=%.4f hip=%.4f base=%.4f diff=%.4f Δ=%.4f counted=$counted count=${_jumpCount.value} rtMs=$nowElapsed"
+                .format(hipY, hipF, base, diff, delta),
+        )
+
         // 降频更新提示，避免每帧刷新 UI 文本。
         if (frameCounter % 8 == 0) {
-            val diff = detector.lastBaselineY - detector.lastFilteredY
             _hint.value =
-                "hip=%.3f base=%.3f diff=%.3f Δ=%.3f".format(
-                    detector.lastFilteredY,
-                    detector.lastBaselineY,
-                    diff,
-                    detector.lastDeltaThreshold,
-                )
+                "hip=%.3f base=%.3f diff=%.3f Δ=%.3f".format(hipF, base, diff, delta)
         }
     }
 

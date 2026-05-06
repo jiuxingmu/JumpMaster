@@ -29,9 +29,9 @@ class PoseLandmarkerFactory @Inject constructor(
                     PoseLandmarker.PoseLandmarkerOptions.builder()
                         .setBaseOptions(baseOptions)
                         .setRunningMode(RunningMode.VIDEO)
-                        .setMinPoseDetectionConfidence(0.45f)
-                        .setMinPosePresenceConfidence(0.45f)
-                        .setMinTrackingConfidence(0.45f)
+                        .setMinPoseDetectionConfidence(0.30f)
+                        .setMinPosePresenceConfidence(0.30f)
+                        .setMinTrackingConfidence(0.30f)
                         .build()
 
                 instance = PoseLandmarker.createFromOptions(appContext, options)

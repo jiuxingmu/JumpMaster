@@ -17,12 +17,13 @@ private enum class JumpPhase {
  * 约定：画面中 **较小的 y 表示髋关节更靠近画面上方**，一次完整跳跃会先压缩 y，再回落至站立高度。
  */
 class CameraJumpDetector(
-    private val smoothingWindow: Int = 7,
-    private val minJumpUpDelta: Float = 0.0012f,
-    private val maxJumpUpDelta: Float = 0.028f,
+    private val smoothingWindow: Int = 5,
+    private val minJumpUpDelta: Float = 0.006f,
+    private val maxJumpUpDelta: Float = 0.014f,
     private val noiseEmaAlpha: Float = 0.12f,
-    private val jumpSigma: Float = 3.2f,
-    private val recoverRatio: Float = 0.45f,
+    private val jumpSigma: Float = 2.2f,
+    private val recoverRatio: Float = 0.60f,
+    private val minRecoverDelta: Float = 0.008f,
     private val baselineAlpha: Float = 0.08f,
     private val minSpacingMs: Long = 380L,
     private val maxJumpPhaseMs: Long = 1400L,
@@ -34,6 +35,7 @@ class CameraJumpDetector(
         require(maxJumpUpDelta > minJumpUpDelta) { "maxJumpUpDelta must be > minJumpUpDelta" }
         require(jumpSigma > 0f) { "jumpSigma must be > 0" }
         require(recoverRatio in 0.1f..0.9f) { "recoverRatio should be in [0.1, 0.9]" }
+        require(minRecoverDelta > 0f) { "minRecoverDelta must be > 0" }
     }
 
     private val buffer = FloatArray(smoothingWindow) { Float.NaN }
@@ -41,9 +43,10 @@ class CameraJumpDetector(
     private var bufferIndex = 0
 
     private var phase = JumpPhase.IDLE
-    private var lastCountRealtimeMs = Long.MIN_VALUE
+    private var lastCountRealtimeMs = 0L
     private var jumpPhaseStartRealtimeMs = Long.MIN_VALUE
     private var baselineY: Float? = null
+    private var jumpDirectionSign: Int = 0
     private var noiseEma: Float = 0.002f
 
     @Volatile
@@ -65,6 +68,20 @@ class CameraJumpDetector(
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
     val jumpEvents: SharedFlow<Unit> = _jumpPulse.asSharedFlow()
+
+    fun reset() {
+        buffer.fill(Float.NaN)
+        bufferCount = 0
+        bufferIndex = 0
+        phase = JumpPhase.IDLE
+        jumpPhaseStartRealtimeMs = Long.MIN_VALUE
+        jumpDirectionSign = 0
+        baselineY = null
+        noiseEma = 0.002f
+        lastFilteredY = Float.NaN
+        lastBaselineY = Float.NaN
+        lastDeltaThreshold = Float.NaN
+    }
 
     private fun pushSample(sample: Float): Float {
         buffer[bufferIndex] = sample
@@ -113,14 +130,16 @@ class CameraJumpDetector(
                 minJumpUpDelta,
                 maxJumpUpDelta,
             )
-        val recoverDelta = jumpUpDelta * recoverRatio
+        val recoverDelta = maxOf(minRecoverDelta, jumpUpDelta * recoverRatio)
         lastDeltaThreshold = jumpUpDelta
 
         return when (phase) {
             JumpPhase.IDLE -> {
-                if (filtered <= currentBaseline - jumpUpDelta) {
+                val deviation = filtered - currentBaseline
+                if (abs(deviation) >= jumpUpDelta) {
                     phase = JumpPhase.IN_JUMP
                     jumpPhaseStartRealtimeMs = elapsedRealtimeMs
+                    jumpDirectionSign = if (deviation >= 0f) 1 else -1
                 }
                 false
             }
@@ -134,15 +153,27 @@ class CameraJumpDetector(
                     phase = JumpPhase.IDLE
                     jumpPhaseStartRealtimeMs = Long.MIN_VALUE
                     baselineY = filtered
+                    jumpDirectionSign = 0
                     return false
                 }
 
-                if (filtered >= currentBaseline - recoverDelta &&
-                    elapsedRealtimeMs - lastCountRealtimeMs >= minSpacingMs
+                val deviation = filtered - currentBaseline
+                val isDirectionReversed =
+                    if (jumpDirectionSign == 0) {
+                        false
+                    } else {
+                        deviation * jumpDirectionSign.toFloat() <= 0f
+                    }
+                val hasReturnedNearBaseline = abs(deviation) <= recoverDelta
+
+                if (isDirectionReversed &&
+                    hasReturnedNearBaseline &&
+                    (lastCountRealtimeMs == 0L || elapsedRealtimeMs - lastCountRealtimeMs >= minSpacingMs)
                 ) {
                     phase = JumpPhase.IDLE
                     jumpPhaseStartRealtimeMs = Long.MIN_VALUE
                     lastCountRealtimeMs = elapsedRealtimeMs
+                    jumpDirectionSign = 0
                     _jumpPulse.tryEmit(Unit)
                     true
                 } else {
