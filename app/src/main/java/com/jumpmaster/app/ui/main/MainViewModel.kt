@@ -39,6 +39,8 @@ class MainViewModel @Inject constructor(
 
     private val _hint = MutableStateFlow<String>("面向摄像头开始做跳跃 Demo")
     val hint: StateFlow<String> = _hint.asStateFlow()
+    private val _poseOverlayPoints = MutableStateFlow<PoseOverlayPoints?>(null)
+    val poseOverlayPoints: StateFlow<PoseOverlayPoints?> = _poseOverlayPoints.asStateFlow()
     private var frameCounter: Int = 0
     private var noPoseStreak: Int = 0
     private var lastFrameState: FrameState = FrameState.VALID
@@ -129,6 +131,7 @@ class MainViewModel @Inject constructor(
         stampMs: Long,
     ): FrameEvaluation {
         val detection = detectPose(landmarker, imageProxy, lensFacingFront, stampMs)
+        _poseOverlayPoints.value = detection?.extractPoseOverlayPoints()
         val frameMetrics = detection?.extractPoseFrameMetrics()
         val hipY = frameMetrics?.hipY ?: return FrameEvaluation.Invalid(FrameState.NO_POSE)
         if (frameMetrics.isValidFrame.not()) return FrameEvaluation.Invalid(FrameState.INVALID_BODY)

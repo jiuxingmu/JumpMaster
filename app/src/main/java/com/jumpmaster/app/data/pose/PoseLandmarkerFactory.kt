@@ -54,6 +54,8 @@ class PoseLandmarkerFactory @Inject constructor(
         const val NOSE: Int = 0
         const val LEFT_SHOULDER: Int = 11
         const val RIGHT_SHOULDER: Int = 12
+        const val LEFT_WRIST: Int = 15
+        const val RIGHT_WRIST: Int = 16
         const val LEFT_HIP: Int = 23
         const val RIGHT_HIP: Int = 24
     }

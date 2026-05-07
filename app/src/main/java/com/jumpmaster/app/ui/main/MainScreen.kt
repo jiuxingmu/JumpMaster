@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.Cameraswitch
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,6 +61,7 @@ fun MainScreen(
     var useFrontCamera by remember { mutableStateOf(true) }
     var cameraBindError by remember { mutableStateOf<String?>(null) }
     var hasAnalyzerFrames by remember { mutableStateOf(false) }
+    var overlayRenderMode by remember { mutableStateOf(OverlayRenderMode.SKELETON) }
     var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
     LaunchedEffect(permissionState.granted) {
@@ -79,6 +82,7 @@ fun MainScreen(
 
     val jumpCount by viewModel.jumpCount.collectAsStateWithLifecycle()
     val hint by viewModel.hint.collectAsStateWithLifecycle()
+    val poseOverlayPoints by viewModel.poseOverlayPoints.collectAsStateWithLifecycle()
 
     CameraBindingEffect(
         cameraProvider = uiState.cameraProvider,
@@ -112,6 +116,17 @@ fun MainScreen(
                             contentDescription = "历史记录",
                         )
                     }
+                    IconButton(onClick = { overlayRenderMode = overlayRenderMode.toggle() }) {
+                        Icon(
+                            imageVector =
+                                if (overlayRenderMode == OverlayRenderMode.SKELETON) {
+                                    Icons.Outlined.Visibility
+                                } else {
+                                    Icons.Outlined.VisibilityOff
+                                },
+                            contentDescription = "Toggle pose overlay",
+                        )
+                    }
                 },
             )
         },
@@ -123,6 +138,8 @@ fun MainScreen(
             previewView = previewView,
             cameraBindError = uiState.cameraBindError,
             hasAnalyzerFrames = uiState.hasAnalyzerFrames,
+            poseOverlayPoints = poseOverlayPoints,
+            overlayRenderMode = overlayRenderMode,
             hint = hint,
             jumpCount = jumpCount,
         )
@@ -162,4 +179,10 @@ private fun rememberAnalysisExecutor() =
         DisposableEffect(Unit) {
             onDispose { executor.shutdown() }
         }
+    }
+
+private fun OverlayRenderMode.toggle(): OverlayRenderMode =
+    when (this) {
+        OverlayRenderMode.OFF -> OverlayRenderMode.SKELETON
+        OverlayRenderMode.SKELETON -> OverlayRenderMode.OFF
     }
