@@ -99,19 +99,23 @@ class CameraJumpDetector(
         return sum / bufferCount
     }
 
-    /**
-     * @param elapsedRealtimeMs [`android.os.SystemClock.elapsedRealtime`]
-     * @return 若本帧计数 +1（即状态机闭环完成）则为 `true`，否则 `false`。
-     */
-    fun onRawHipY(rawNormalizedY: Float, elapsedRealtimeMs: Long): Boolean {
-        if (rawNormalizedY.isNaN() || rawNormalizedY.isInfinite()) return false
-        val boundedRaw = rawNormalizedY.coerceIn(0f, 1f)
+    private data class Thresholds(
+        val jumpUpDelta: Float,
+        val recoverDelta: Float,
+    )
 
-        val filtered = pushSample(boundedRaw)
-        if (filtered.isNaN()) return false
+    // ---------- 输入与预处理 ----------
+    private fun normalizeAndFilter(rawNormalizedY: Float): Float? {
+        if (rawNormalizedY.isNaN() || rawNormalizedY.isInfinite()) return null
+        val filtered = pushSample(rawNormalizedY.coerceIn(0f, 1f))
+        if (filtered.isNaN()) return null
         lastFilteredY = filtered
+        return filtered
+    }
 
-        // 若历史基线异常偏离（例如误检造成 > 1 或突然飘移），立即重置，避免状态机卡死。
+    // ---------- 基线与阈值 ----------
+    // 基线异常时快速重置，避免状态机卡死在错误参考线上。
+    private fun sanitizeBaselineIfNeeded(filtered: Float) {
         baselineY?.let { old ->
             if (old !in 0f..1f || abs(old - filtered) > 0.35f) {
                 baselineY = filtered
@@ -119,91 +123,107 @@ class CameraJumpDetector(
                 jumpPhaseStartRealtimeMs = Long.MIN_VALUE
             }
         }
+    }
 
-        val currentBaseline =
-            baselineY?.let { old ->
-                // 跳跃相位冻结基线，避免动作本身把基线拉偏。
-                if (phase == JumpPhase.IN_JUMP) {
-                    old
-                } else {
-                    val offset = abs(filtered - old)
-                    largeOffsetIdleFrames =
-                        if (offset > 0.08f) {
-                            largeOffsetIdleFrames + 1
-                        } else {
-                            0
-                        }
-                    val adaptiveAlpha =
-                        when {
-                            largeOffsetIdleFrames >= 6 -> 0.35f
-                            offset > 0.08f -> 0.15f
-                            else -> baselineAlpha
-                        }
-                    old + adaptiveAlpha * (filtered - old)
-                }
-            } ?: filtered
+    private fun updateBaseline(filtered: Float): Float {
+        val currentBaseline = baselineY?.let { old -> computeAdaptiveBaseline(old, filtered) } ?: filtered
         baselineY = currentBaseline
         lastBaselineY = currentBaseline
+        return currentBaseline
+    }
 
-        val deviation = abs(filtered - currentBaseline)
+    // IDLE 时自适应更新基线；IN_JUMP 冻结基线，避免动作本身把参考线拉偏。
+    private fun computeAdaptiveBaseline(old: Float, filtered: Float): Float {
+        if (phase == JumpPhase.IN_JUMP) return old
+        val offset = abs(filtered - old)
+        largeOffsetIdleFrames = if (offset > 0.08f) largeOffsetIdleFrames + 1 else 0
+        val adaptiveAlpha =
+            when {
+                largeOffsetIdleFrames >= 6 -> 0.35f
+                offset > 0.08f -> 0.15f
+                else -> baselineAlpha
+            }
+        return old + adaptiveAlpha * (filtered - old)
+    }
+
+    private fun computeThresholds(filtered: Float, baseline: Float): Thresholds {
+        val deviation = abs(filtered - baseline)
         noiseEma += noiseEmaAlpha * (deviation - noiseEma)
-        val jumpUpDelta =
-            (noiseEma * jumpSigma).coerceIn(
-                minJumpUpDelta,
-                maxJumpUpDelta,
-            )
+        val jumpUpDelta = (noiseEma * jumpSigma).coerceIn(minJumpUpDelta, maxJumpUpDelta)
         val recoverDelta = maxOf(minRecoverDelta, jumpUpDelta * recoverRatio)
         lastDeltaThreshold = jumpUpDelta
+        return Thresholds(jumpUpDelta = jumpUpDelta, recoverDelta = recoverDelta)
+    }
 
+    // ---------- 状态机 ----------
+    private fun handleIdlePhase(
+        filtered: Float,
+        baseline: Float,
+        jumpUpDelta: Float,
+        elapsedRealtimeMs: Long,
+    ): Boolean {
+        val deviation = filtered - baseline
+        if (abs(deviation) >= jumpUpDelta) {
+            phase = JumpPhase.IN_JUMP
+            jumpPhaseStartRealtimeMs = elapsedRealtimeMs
+            jumpDirectionSign = if (deviation >= 0f) 1 else -1
+            jumpMaxAbsDeviation = abs(deviation)
+        }
+        return false
+    }
+
+    // 跳跃相位超时保护：长时间未闭环则重置，防止一直锁在 IN_JUMP。
+    private fun handleTimeoutIfNeeded(
+        filtered: Float,
+        baseline: Float,
+        elapsedRealtimeMs: Long,
+    ): Boolean {
+        val isTimedOut =
+            jumpPhaseStartRealtimeMs != Long.MIN_VALUE &&
+                elapsedRealtimeMs - jumpPhaseStartRealtimeMs > maxJumpPhaseMs
+        if (!isTimedOut) return false
+        phase = JumpPhase.IDLE
+        jumpPhaseStartRealtimeMs = Long.MIN_VALUE
+        if (abs(filtered - baseline) > 0.08f) baselineY = filtered
+        jumpDirectionSign = 0
+        jumpMaxAbsDeviation = 0f
+        return true
+    }
+
+    private fun handleInJumpPhase(
+        filtered: Float,
+        baseline: Float,
+        thresholds: Thresholds,
+        elapsedRealtimeMs: Long,
+    ): Boolean {
+        if (handleTimeoutIfNeeded(filtered, baseline, elapsedRealtimeMs)) return false
+        val deviation = filtered - baseline
+        jumpMaxAbsDeviation = maxOf(jumpMaxAbsDeviation, abs(deviation))
+        val hasReturnedNearBaseline = abs(deviation) <= thresholds.recoverDelta
+        val hasEnoughAmplitude = jumpMaxAbsDeviation >= maxOf(minJumpAmplitude, thresholds.jumpUpDelta * 1.5f)
+        val hasMinSpacing = lastCountRealtimeMs == 0L || elapsedRealtimeMs - lastCountRealtimeMs >= minSpacingMs
+        if (!hasReturnedNearBaseline || !hasEnoughAmplitude || !hasMinSpacing) return false
+        phase = JumpPhase.IDLE
+        jumpPhaseStartRealtimeMs = Long.MIN_VALUE
+        lastCountRealtimeMs = elapsedRealtimeMs
+        jumpDirectionSign = 0
+        jumpMaxAbsDeviation = 0f
+        _jumpPulse.tryEmit(Unit)
+        return true
+    }
+
+    /**
+     * @param elapsedRealtimeMs [`android.os.SystemClock.elapsedRealtime`]
+     * @return 若本帧计数 +1（即状态机闭环完成）则为 `true`，否则 `false`。
+     */
+    fun onRawHipY(rawNormalizedY: Float, elapsedRealtimeMs: Long): Boolean {
+        val filtered = normalizeAndFilter(rawNormalizedY) ?: return false
+        sanitizeBaselineIfNeeded(filtered)
+        val baseline = updateBaseline(filtered)
+        val thresholds = computeThresholds(filtered, baseline)
         return when (phase) {
-            JumpPhase.IDLE -> {
-                val deviation = filtered - currentBaseline
-                if (abs(deviation) >= jumpUpDelta) {
-                    phase = JumpPhase.IN_JUMP
-                    jumpPhaseStartRealtimeMs = elapsedRealtimeMs
-                    jumpDirectionSign = if (deviation >= 0f) 1 else -1
-                    jumpMaxAbsDeviation = abs(deviation)
-                }
-                false
-            }
-
-            JumpPhase.IN_JUMP -> {
-                // 进入跳跃后长时间未完成回落，判定为异常检测，回到 IDLE 防止锁死。
-                if (
-                    jumpPhaseStartRealtimeMs != Long.MIN_VALUE &&
-                    elapsedRealtimeMs - jumpPhaseStartRealtimeMs > maxJumpPhaseMs
-                ) {
-                    phase = JumpPhase.IDLE
-                    jumpPhaseStartRealtimeMs = Long.MIN_VALUE
-                    if (abs(filtered - currentBaseline) > 0.08f) {
-                        baselineY = filtered
-                    }
-                    jumpDirectionSign = 0
-                    jumpMaxAbsDeviation = 0f
-                    return false
-                }
-
-                val deviation = filtered - currentBaseline
-                jumpMaxAbsDeviation = maxOf(jumpMaxAbsDeviation, abs(deviation))
-                val hasReturnedNearBaseline = abs(deviation) <= recoverDelta
-                val hasEnoughAmplitude =
-                    jumpMaxAbsDeviation >= maxOf(minJumpAmplitude, jumpUpDelta * 1.5f)
-
-                if (hasReturnedNearBaseline &&
-                    hasEnoughAmplitude &&
-                    (lastCountRealtimeMs == 0L || elapsedRealtimeMs - lastCountRealtimeMs >= minSpacingMs)
-                ) {
-                    phase = JumpPhase.IDLE
-                    jumpPhaseStartRealtimeMs = Long.MIN_VALUE
-                    lastCountRealtimeMs = elapsedRealtimeMs
-                    jumpDirectionSign = 0
-                    jumpMaxAbsDeviation = 0f
-                    _jumpPulse.tryEmit(Unit)
-                    true
-                } else {
-                    false
-                }
-            }
+            JumpPhase.IDLE -> handleIdlePhase(filtered, baseline, thresholds.jumpUpDelta, elapsedRealtimeMs)
+            JumpPhase.IN_JUMP -> handleInJumpPhase(filtered, baseline, thresholds, elapsedRealtimeMs)
         }
     }
 }
