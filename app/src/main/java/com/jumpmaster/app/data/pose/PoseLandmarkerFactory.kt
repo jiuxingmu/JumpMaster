@@ -50,7 +50,10 @@ class PoseLandmarkerFactory @Inject constructor(
     companion object {
         const val MODEL_ASSET_PATH: String = "pose_landmarker_lite.task"
 
-        /** BlazePose（33 landmarks）中的髋部关键点索引。 */
+        /** BlazePose（33 landmarks）关键点索引。 */
+        const val NOSE: Int = 0
+        const val LEFT_SHOULDER: Int = 11
+        const val RIGHT_SHOULDER: Int = 12
         const val LEFT_HIP: Int = 23
         const val RIGHT_HIP: Int = 24
     }

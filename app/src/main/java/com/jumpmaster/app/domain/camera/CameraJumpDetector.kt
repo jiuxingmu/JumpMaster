@@ -17,15 +17,16 @@ private enum class JumpPhase {
  * 约定：画面中 **较小的 y 表示髋关节更靠近画面上方**，一次完整跳跃会先压缩 y，再回落至站立高度。
  */
 class CameraJumpDetector(
-    private val smoothingWindow: Int = 5,
+    private val smoothingWindow: Int = 4,
     private val minJumpUpDelta: Float = 0.006f,
-    private val maxJumpUpDelta: Float = 0.014f,
+    private val maxJumpUpDelta: Float = 0.012f,
     private val noiseEmaAlpha: Float = 0.12f,
     private val jumpSigma: Float = 2.2f,
     private val recoverRatio: Float = 0.60f,
     private val minRecoverDelta: Float = 0.008f,
-    private val baselineAlpha: Float = 0.08f,
-    private val minSpacingMs: Long = 380L,
+    private val baselineAlpha: Float = 0.03f,
+    private val minJumpAmplitude: Float = 0.022f,
+    private val minSpacingMs: Long = 240L,
     private val maxJumpPhaseMs: Long = 1400L,
 ) {
 
@@ -47,7 +48,9 @@ class CameraJumpDetector(
     private var jumpPhaseStartRealtimeMs = Long.MIN_VALUE
     private var baselineY: Float? = null
     private var jumpDirectionSign: Int = 0
+    private var jumpMaxAbsDeviation: Float = 0f
     private var noiseEma: Float = 0.002f
+    private var largeOffsetIdleFrames: Int = 0
 
     @Volatile
     var lastFilteredY: Float = Float.NaN
@@ -76,6 +79,8 @@ class CameraJumpDetector(
         phase = JumpPhase.IDLE
         jumpPhaseStartRealtimeMs = Long.MIN_VALUE
         jumpDirectionSign = 0
+        jumpMaxAbsDeviation = 0f
+        largeOffsetIdleFrames = 0
         baselineY = null
         noiseEma = 0.002f
         lastFilteredY = Float.NaN
@@ -118,7 +123,24 @@ class CameraJumpDetector(
         val currentBaseline =
             baselineY?.let { old ->
                 // 跳跃相位冻结基线，避免动作本身把基线拉偏。
-                if (phase == JumpPhase.IN_JUMP) old else old + baselineAlpha * (filtered - old)
+                if (phase == JumpPhase.IN_JUMP) {
+                    old
+                } else {
+                    val offset = abs(filtered - old)
+                    largeOffsetIdleFrames =
+                        if (offset > 0.08f) {
+                            largeOffsetIdleFrames + 1
+                        } else {
+                            0
+                        }
+                    val adaptiveAlpha =
+                        when {
+                            largeOffsetIdleFrames >= 6 -> 0.35f
+                            offset > 0.08f -> 0.15f
+                            else -> baselineAlpha
+                        }
+                    old + adaptiveAlpha * (filtered - old)
+                }
             } ?: filtered
         baselineY = currentBaseline
         lastBaselineY = currentBaseline
@@ -140,6 +162,7 @@ class CameraJumpDetector(
                     phase = JumpPhase.IN_JUMP
                     jumpPhaseStartRealtimeMs = elapsedRealtimeMs
                     jumpDirectionSign = if (deviation >= 0f) 1 else -1
+                    jumpMaxAbsDeviation = abs(deviation)
                 }
                 false
             }
@@ -152,28 +175,29 @@ class CameraJumpDetector(
                 ) {
                     phase = JumpPhase.IDLE
                     jumpPhaseStartRealtimeMs = Long.MIN_VALUE
-                    baselineY = filtered
+                    if (abs(filtered - currentBaseline) > 0.08f) {
+                        baselineY = filtered
+                    }
                     jumpDirectionSign = 0
+                    jumpMaxAbsDeviation = 0f
                     return false
                 }
 
                 val deviation = filtered - currentBaseline
-                val isDirectionReversed =
-                    if (jumpDirectionSign == 0) {
-                        false
-                    } else {
-                        deviation * jumpDirectionSign.toFloat() <= 0f
-                    }
+                jumpMaxAbsDeviation = maxOf(jumpMaxAbsDeviation, abs(deviation))
                 val hasReturnedNearBaseline = abs(deviation) <= recoverDelta
+                val hasEnoughAmplitude =
+                    jumpMaxAbsDeviation >= maxOf(minJumpAmplitude, jumpUpDelta * 1.5f)
 
-                if (isDirectionReversed &&
-                    hasReturnedNearBaseline &&
+                if (hasReturnedNearBaseline &&
+                    hasEnoughAmplitude &&
                     (lastCountRealtimeMs == 0L || elapsedRealtimeMs - lastCountRealtimeMs >= minSpacingMs)
                 ) {
                     phase = JumpPhase.IDLE
                     jumpPhaseStartRealtimeMs = Long.MIN_VALUE
                     lastCountRealtimeMs = elapsedRealtimeMs
                     jumpDirectionSign = 0
+                    jumpMaxAbsDeviation = 0f
                     _jumpPulse.tryEmit(Unit)
                     true
                 } else {
