@@ -7,7 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.jumpmaster.app.ui.navigation.JumpMateNavHost
+import com.jumpmaster.app.ui.navigation.JumpMasterNavHost
 import com.jumpmaster.app.ui.theme.JumpMasterTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             JumpMasterTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    JumpMateNavHost(modifier = Modifier.fillMaxSize())
+                    JumpMasterNavHost(modifier = Modifier.fillMaxSize())
                 }
             }
         }

@@ -10,7 +10,7 @@ import com.jumpmaster.app.ui.history.HistoryScreen
 import com.jumpmaster.app.ui.main.MainScreen
 
 @Composable
-fun JumpMateNavHost(
+fun JumpMasterNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
 ) {
