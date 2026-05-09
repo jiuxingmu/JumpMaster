@@ -9,7 +9,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.outlined.Cameraswitch
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -51,7 +50,6 @@ private data class CameraPermissionState(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    onOpenHistory: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: MainViewModel = hiltViewModel(),
 ) {
@@ -102,18 +100,12 @@ fun MainScreen(
         modifier = modifier.fillMaxSize(),
         topBar = {
             TopAppBar(
-                title = { Text(text = "JumpMaster · Demo") },
+                title = { Text(text = "开始跳绳") },
                 actions = {
                     IconButton(onClick = { useFrontCamera = !uiState.useFrontCamera }) {
                         Icon(
                             Icons.Outlined.Cameraswitch,
                             contentDescription = "切换摄像头",
-                        )
-                    }
-                    IconButton(onClick = onOpenHistory) {
-                        Icon(
-                            Icons.AutoMirrored.Outlined.List,
-                            contentDescription = "历史记录",
                         )
                     }
                     IconButton(onClick = { overlayRenderMode = overlayRenderMode.toggle() }) {
