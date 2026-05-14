@@ -11,6 +11,9 @@ import com.jumpmaster.app.domain.camera.CameraJumpDetector
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 
+internal const val POSE_PIPELINE_LOG_TAG = "JumpMasterPose"
+internal const val MAX_TILT_FROM_VERTICAL_DEG = 20f
+
 internal class MainCameraFrameProcessor(
     private val poseLandmarkerFactory: PoseLandmarkerFactory,
     private val tiltProvider: DeviceTiltProvider,
@@ -52,7 +55,7 @@ internal class MainCameraFrameProcessor(
         runCatching { poseLandmarkerFactory.acquire() }.getOrElse {
             imageProxy.close()
             val msg = it.message ?: it.javaClass.simpleName
-            Log.e(MainViewModel.TAG, "PoseLandmarker acquire failed: $msg", it)
+            Log.e(POSE_PIPELINE_LOG_TAG, "PoseLandmarker acquire failed: $msg", it)
             onRecoverablePoseFailure()
             null
         }
@@ -72,7 +75,7 @@ internal class MainCameraFrameProcessor(
         val detection =
             runCatching { landmarker.detectForVideo(mpImage, stampMs) }
                 .onFailure {
-                    Log.e(MainViewModel.TAG, "detectForVideo failed: ${it.message}", it)
+                    Log.e(POSE_PIPELINE_LOG_TAG, "detectForVideo failed: ${it.message}", it)
                     onRecoverablePoseFailure()
                 }
                 .getOrNull()
@@ -128,7 +131,7 @@ internal class MainCameraFrameProcessor(
         if (noPoseStreak >= 25) {
             detector.reset()
             noPoseStreak = 0
-            Log.w(MainViewModel.TAG, "frame=$frameCounter no_pose_streak_reset")
+            Log.w(POSE_PIPELINE_LOG_TAG, "frame=$frameCounter no_pose_streak_reset")
         }
         emitFrameState(FrameState.NO_POSE, "frame=$frameCounter no_pose hipAvg=null")
         hint.value = "未检测到人体姿态，尝试调整取景范围"
@@ -147,10 +150,10 @@ internal class MainCameraFrameProcessor(
         val tilt = tiltProvider.tiltFromVerticalDeg.value
         emitFrameState(
             FrameState.INVALID_TILT,
-            "frame=$frameCounter invalid_tilt tilt=%.1f max=%.1f".format(tilt, MainViewModel.MAX_TILT_FROM_VERTICAL_DEG),
+            "frame=$frameCounter invalid_tilt tilt=%.1f max=%.1f".format(tilt, MAX_TILT_FROM_VERTICAL_DEG),
         )
         hint.value =
-            "请竖直握持手机（当前倾角 %.1f°, 需 < %.1f°）".format(tilt, MainViewModel.MAX_TILT_FROM_VERTICAL_DEG)
+            "请竖直握持手机（当前倾角 %.1f°, 需 < %.1f°）".format(tilt, MAX_TILT_FROM_VERTICAL_DEG)
     }
 
     private fun handleOutOfRangeFrame(hipY: Float) {
@@ -162,7 +165,7 @@ internal class MainCameraFrameProcessor(
 
     private fun isTiltInvalid(): Boolean {
         val tilt = tiltProvider.tiltFromVerticalDeg.value
-        return tilt.isNaN() || tilt > MainViewModel.MAX_TILT_FROM_VERTICAL_DEG
+        return tilt.isNaN() || tilt > MAX_TILT_FROM_VERTICAL_DEG
     }
 
     private fun shouldLogFrameState(
@@ -171,7 +174,7 @@ internal class MainCameraFrameProcessor(
     ): Boolean = currentState != lastFrameState || frame % 30 == 0
 
     private fun emitFrameState(newState: FrameState, logMessage: String) {
-        if (shouldLogFrameState(newState, frameCounter)) Log.w(MainViewModel.TAG, logMessage)
+        if (shouldLogFrameState(newState, frameCounter)) Log.w(POSE_PIPELINE_LOG_TAG, logMessage)
         lastFrameState = newState
     }
 
@@ -181,7 +184,7 @@ internal class MainCameraFrameProcessor(
         val delta = detector.lastDeltaThreshold
         val diff = if (!hipF.isNaN() && !base.isNaN()) base - hipF else Float.NaN
         Log.d(
-            MainViewModel.TAG,
+            POSE_PIPELINE_LOG_TAG,
             "frame=$frameCounter tsMs=$stampMs hipRaw=%.4f hip=%.4f base=%.4f diff=%.4f Δ=%.4f counted=$counted count=${jumpCount()} rtMs=$nowElapsed"
                 .format(hipY, hipF, base, diff, delta),
         )

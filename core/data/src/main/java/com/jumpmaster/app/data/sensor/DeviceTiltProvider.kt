@@ -23,6 +23,10 @@ class DeviceTiltProvider @Inject constructor(
     private val _tiltFromVerticalDeg = MutableStateFlow(Float.NaN)
     val tiltFromVerticalDeg: StateFlow<Float> = _tiltFromVerticalDeg.asStateFlow()
 
+    private val lock = Any()
+    private var consumerRefCount = 0
+    private var listenerRegistered = false
+
     private val gravityListener =
         object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
@@ -38,7 +42,26 @@ class DeviceTiltProvider @Inject constructor(
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
         }
 
-    init {
+    fun start() {
+        synchronized(lock) {
+            consumerRefCount++
+            if (listenerRegistered) return
+            registerGravityListener()
+            listenerRegistered = true
+        }
+    }
+
+    fun stop() {
+        synchronized(lock) {
+            if (consumerRefCount > 0) consumerRefCount--
+            if (consumerRefCount > 0 || !listenerRegistered) return
+            sensorManager.unregisterListener(gravityListener)
+            listenerRegistered = false
+            _tiltFromVerticalDeg.value = Float.NaN
+        }
+    }
+
+    private fun registerGravityListener() {
         val gravitySensor = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
         val fallbackAccel = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         sensorManager.registerListener(
@@ -46,9 +69,5 @@ class DeviceTiltProvider @Inject constructor(
             gravitySensor ?: fallbackAccel,
             SensorManager.SENSOR_DELAY_GAME,
         )
-    }
-
-    fun stop() {
-        sensorManager.unregisterListener(gravityListener)
     }
 }

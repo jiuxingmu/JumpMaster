@@ -1,12 +1,16 @@
 package com.jumpmaster.app.data.local.db
 
 import android.content.Context
+import android.util.Log
 import androidx.annotation.WorkerThread
+import com.jumpmaster.app.domain.session.JumpSessionCalories
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import java.time.LocalDateTime
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 
 @Singleton
 class JumpRepository @Inject constructor(
@@ -23,6 +27,21 @@ class JumpRepository @Inject constructor(
             durationMs = durationMs,
         )
         dao.insertRecord(record)
+    }
+
+    /** Persists a completed training session (C-02); IO on [Dispatchers.IO]. */
+    suspend fun insertCompletedTrainingSession(jumpCount: Int, durationMs: Long) {
+        withContext(Dispatchers.IO) {
+            val calories = JumpSessionCalories.fromJumpCount(jumpCount)
+            dao.insertRecord(
+                JumpRecord(
+                    count = jumpCount,
+                    calories = calories,
+                    durationMs = durationMs,
+                ),
+            )
+            Log.d(TAG, "inserted training session jumpCount=$jumpCount durationMs=$durationMs")
+        }
     }
 
     fun getAllRecordsFlow(): Flow<List<JumpRecord>> {
@@ -70,5 +89,9 @@ class JumpRepository @Inject constructor(
             )
         dao.deleteAllRecords()
         dao.insertRecords(demoRecords)
+    }
+
+    private companion object {
+        private const val TAG = "JumpRepository"
     }
 }

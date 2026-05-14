@@ -8,8 +8,11 @@ import com.jumpmaster.app.data.sensor.DeviceTiltProvider
 import com.jumpmaster.app.domain.camera.CameraJumpDetector
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -18,12 +21,8 @@ import kotlinx.coroutines.launch
 class MainViewModel @Inject constructor(
     private val poseLandmarkerFactory: PoseLandmarkerFactory,
     private val tiltProvider: DeviceTiltProvider,
+    private val sessionPersistCoordinator: MainSessionPersistCoordinator,
 ) : ViewModel() {
-
-    internal companion object {
-        const val TAG = "JumpMasterPose"
-        const val MAX_TILT_FROM_VERTICAL_DEG = 20f
-    }
 
     private val detector = CameraJumpDetector()
     private val durationTracker = ActiveDurationTracker()
@@ -42,6 +41,12 @@ class MainViewModel @Inject constructor(
 
     private val _sessionSummary = MutableStateFlow<SessionSummary?>(null)
     val sessionSummary: StateFlow<SessionSummary?> = _sessionSummary.asStateFlow()
+
+    private var persistRetrySummary: SessionSummary? = null
+
+    private val _sessionPersistEvents =
+        MutableSharedFlow<SessionPersistEvent>(extraBufferCapacity = 1)
+    val sessionPersistEvents: SharedFlow<SessionPersistEvent> = _sessionPersistEvents.asSharedFlow()
 
     private val _poseEngineRetrySuggested = MutableStateFlow(false)
     val poseEngineRetrySuggested: StateFlow<Boolean> = _poseEngineRetrySuggested.asStateFlow()
@@ -64,6 +69,7 @@ class MainViewModel @Inject constructor(
         )
 
     init {
+        tiltProvider.start()
         viewModelScope.launch {
             detector.jumpEvents.collect {
                 if (isJumpCountingEnabled()) _jumpCount.update { c -> c + 1 }
@@ -81,19 +87,28 @@ class MainViewModel @Inject constructor(
 
     fun confirmEndTraining() {
         if (_trainingState.value == TrainingSessionState.Idle) return
+        sessionPersistCoordinator.resetForNewEnd()
         val now = nowElapsedRealtime()
         val jumps = _jumpCount.value
         val effectiveMs = durationTracker.effectiveMsAt(now)
         durationTracker.pauseOpenSegment(now)
         _poseEngineRetrySuggested.value = false
-        _sessionSummary.value = SessionSummary(jumpCount = jumps, effectiveDurationMs = effectiveMs)
+        val summary = SessionSummary(jumpCount = jumps, effectiveDurationMs = effectiveMs)
+        _sessionSummary.value = summary
         _trainingState.value = TrainingSessionState.Idle
         _hint.value = "本次训练已结束"
+        scheduleSessionPersist(summary)
+    }
+
+    fun retryPersistSession() {
+        val summary = persistRetrySummary ?: return
+        scheduleSessionPersist(summary)
     }
 
     fun dismissSessionSummary() {
         if (_sessionSummary.value == null) return
         _sessionSummary.value = null
+        persistRetrySummary = null
         resetCounterForNewSession()
         _poseEngineRetrySuggested.value = false
         _hint.value = "面向摄像头开始做跳跃 Demo"
@@ -108,6 +123,8 @@ class MainViewModel @Inject constructor(
     /** 离开「开始」页（切 Tab / 进后台）且非配置变更时回到 Idle，与 C-01 手动测试要点一致。 */
     fun onScreenHiddenResetIfInSession() {
         if (_sessionSummary.value != null) dismissSessionSummary()
+        persistRetrySummary = null
+        sessionPersistCoordinator.resetForNewEnd()
         if (_trainingState.value == TrainingSessionState.Idle) return
         _trainingState.value = TrainingSessionState.Idle
         durationTracker.reset()
@@ -158,5 +175,22 @@ class MainViewModel @Inject constructor(
         _jumpCount.value = 0
         detector.reset()
         durationTracker.reset()
+    }
+
+    private fun scheduleSessionPersist(summary: SessionSummary) {
+        viewModelScope.launch {
+            val work = sessionPersistCoordinator.persistIfNeeded(summary)
+            when (work) {
+                SessionPersistWorkResult.Skipped -> Unit
+                SessionPersistWorkResult.Saved -> {
+                    persistRetrySummary = null
+                    _sessionPersistEvents.emit(SessionPersistEvent.Saved)
+                }
+                is SessionPersistWorkResult.Failed -> {
+                    persistRetrySummary = summary
+                    _sessionPersistEvents.emit(SessionPersistEvent.Failed)
+                }
+            }
+        }
     }
 }
