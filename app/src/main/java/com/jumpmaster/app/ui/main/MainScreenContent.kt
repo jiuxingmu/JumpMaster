@@ -37,6 +37,7 @@ fun MainCameraContent(
     overlayRenderMode: OverlayRenderMode,
     hint: String,
     jumpCount: Int,
+    onSaveSession: () -> Unit,
 ) {
     Box(
         modifier =
@@ -55,6 +56,7 @@ fun MainCameraContent(
         if (cameraBindError == null && !hasAnalyzerFrames) WaitingFrameCard()
         HintCard(hint = hint)
         CounterCard(count = jumpCount)
+        SaveButton(onClick = onSaveSession, jumpCount = jumpCount)
     }
 }
 
@@ -174,6 +176,23 @@ private fun BoxScope.CounterCard(count: Int) {
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
             text = "计数：$count",
             style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.SaveButton(onClick: () -> Unit, jumpCount: Int) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = 96.dp),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Text(
+            text = if (jumpCount > 0) "保存记录 (" + jumpCount + " 个)" else "保存记录",
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
     }

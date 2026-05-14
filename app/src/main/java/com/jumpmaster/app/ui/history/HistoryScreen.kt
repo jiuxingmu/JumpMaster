@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -39,27 +40,35 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jumpmaster.app.data.local.db.JumpRecord
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen() {
+fun HistoryScreen(
+    viewModel: HistoryViewModel = hiltViewModel(),
+) {
     var tabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("按次", "按日")
+
+    val recordsByMonth by viewModel.recordsByMonth.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("历史记录") },
                 actions = {
-                    IconButton(onClick = {}) {
-                        Icon(Icons.Default.ShowChart, contentDescription = "统计")
+                    IconButton(onClick = { viewModel.loadRecords() }) {
+                        Icon(Icons.Default.ShowChart, contentDescription = "刷新")
+                    }
+                    IconButton(onClick = { viewModel.seedDemoRecords() }) {
+                        Icon(Icons.Default.LocalFireDepartment, contentDescription = "注入测试数据")
                     }
                 },
             )
@@ -85,24 +94,55 @@ fun HistoryScreen() {
                 }
             }
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 16.dp),
-            ) {
-                item {
-                    MonthSection(
-                        month = "2026/02",
-                        count = "8次训练",
-                        records = mockFebruaryRecords,
-                    )
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
                 }
-
-                item {
-                    MonthSection(
-                        month = "2026/01",
-                        count = "19次训练",
-                        records = mockJanuaryRecords,
-                    )
+            } else if (recordsByMonth.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "暂无跳绳记录",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Text(
+                            text = "开始跳绳后，记录会保存在这里",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 16.dp),
+                ) {
+                    recordsByMonth.forEach { (month, records) ->
+                        item {
+                            MonthSection(
+                                month = month,
+                                count = "${records.size}次训练",
+                                records = records,
+                                viewModel = viewModel,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -114,6 +154,7 @@ fun MonthSection(
     month: String,
     count: String,
     records: List<JumpRecord>,
+    viewModel: HistoryViewModel,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -139,7 +180,7 @@ fun MonthSection(
         }
 
         records.forEachIndexed { index, record ->
-            RecordItem(record = record)
+            RecordItem(record = record, viewModel = viewModel)
             if (index < records.size - 1) {
                 Divider(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
@@ -153,7 +194,10 @@ fun MonthSection(
 }
 
 @Composable
-fun RecordItem(record: JumpRecord) {
+fun RecordItem(
+    record: JumpRecord,
+    viewModel: HistoryViewModel,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -183,7 +227,7 @@ fun RecordItem(record: JumpRecord) {
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = record.date,
+                        text = viewModel.formatDate(record),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -191,7 +235,7 @@ fun RecordItem(record: JumpRecord) {
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = record.weekday,
+                    text = viewModel.formatWeekday(record),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 )
@@ -230,28 +274,3 @@ fun RecordItem(record: JumpRecord) {
         }
     }
 }
-
-data class JumpRecord(
-    val date: String,
-    val weekday: String,
-    val count: Int,
-    val calories: Int,
-)
-
-val mockFebruaryRecords = listOf(
-    JumpRecord("2月27日", "星期五", 2000, 357),
-    JumpRecord("2月25日", "星期三", 2000, 414),
-    JumpRecord("2月13日", "星期五", 2000, 300),
-    JumpRecord("2月9日", "星期一", 2001, 383),
-    JumpRecord("2月8日", "星期日", 2122, 258),
-    JumpRecord("2月5日", "星期四", 2001, 274),
-    JumpRecord("2月4日", "星期三", 2501, 366),
-    JumpRecord("2月2日", "星期一", 2000, 306),
-)
-
-val mockJanuaryRecords = listOf(
-    JumpRecord("1月29日", "星期四", 2000, 268),
-    JumpRecord("1月28日", "星期三", 2200, 312),
-    JumpRecord("1月25日", "星期日", 1800, 245),
-    JumpRecord("1月20日", "星期二", 2500, 350),
-)

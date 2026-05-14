@@ -10,6 +10,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cameraswitch
+import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -102,6 +103,12 @@ fun MainScreen(
             TopAppBar(
                 title = { Text(text = "开始跳绳") },
                 actions = {
+                    IconButton(onClick = { viewModel.startSession() }) {
+                        Icon(
+                            Icons.Outlined.Save,
+                            contentDescription = "开始记录",
+                        )
+                    }
                     IconButton(onClick = { useFrontCamera = !uiState.useFrontCamera }) {
                         Icon(
                             Icons.Outlined.Cameraswitch,
@@ -134,6 +141,7 @@ fun MainScreen(
             overlayRenderMode = overlayRenderMode,
             hint = hint,
             jumpCount = jumpCount,
+            onSaveSession = { viewModel.saveSession() },
         )
     }
 }

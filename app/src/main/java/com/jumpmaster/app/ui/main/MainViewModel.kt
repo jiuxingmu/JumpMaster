@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
+import com.jumpmaster.app.data.local.db.JumpRepository
 import com.jumpmaster.app.data.pose.PoseLandmarkerFactory
 import com.jumpmaster.app.data.sensor.DeviceTiltProvider
 import com.jumpmaster.app.domain.camera.CameraJumpDetector
@@ -25,11 +26,13 @@ import kotlinx.coroutines.launch
 class MainViewModel @Inject constructor(
     private val poseLandmarkerFactory: PoseLandmarkerFactory,
     private val tiltProvider: DeviceTiltProvider,
+    private val jumpRepository: JumpRepository,
 ) : ViewModel() {
 
     companion object {
         private const val TAG = "JumpMasterPose"
         private const val MAX_TILT_FROM_VERTICAL_DEG = 20f
+        private const val CALORIES_PER_JUMP = 0.18f
     }
 
     private val detector = CameraJumpDetector()
@@ -44,6 +47,7 @@ class MainViewModel @Inject constructor(
     private var frameCounter: Int = 0
     private var noPoseStreak: Int = 0
     private var lastFrameState: FrameState = FrameState.VALID
+    private var sessionStartTime: Long = 0L
 
     private enum class FrameState {
         VALID,
@@ -65,6 +69,35 @@ class MainViewModel @Inject constructor(
                 _jumpCount.update { it + 1 }
             }
         }
+    }
+
+    fun startSession() {
+        _jumpCount.value = 0
+        sessionStartTime = SystemClock.elapsedRealtime()
+        detector.reset()
+        _hint.value = "开始跳绳！"
+    }
+
+    fun saveSession() {
+        val count = _jumpCount.value
+        if (count == 0) {
+            _hint.value = "没有跳绳记录可保存"
+            return
+        }
+
+        val durationMs = SystemClock.elapsedRealtime() - sessionStartTime
+        val calories = (count * CALORIES_PER_JUMP).toInt()
+
+        viewModelScope.launch {
+            jumpRepository.saveRecord(count, calories, durationMs)
+            _hint.value = "已保存：$count 个，消耗 $calories 千卡"
+        }
+    }
+
+    fun resetCount() {
+        _jumpCount.value = 0
+        detector.reset()
+        _hint.value = "计数已重置"
     }
 
     /**
