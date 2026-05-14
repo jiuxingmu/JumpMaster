@@ -16,3 +16,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "JumpMaster"
 include(":app")
+include(":core:designsystem")
+include(":core:domain")
+include(":core:data")
+include(":feature:counter")
+include(":feature:history")
+include(":feature:profile")

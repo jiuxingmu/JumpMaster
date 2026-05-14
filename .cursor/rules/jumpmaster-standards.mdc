@@ -1,0 +1,31 @@
+---
+description: JumpMaster 全量编码规范（复杂度、MVVM、Compose、Hilt、Room、Camera/MediaPipe）
+alwaysApply: true
+---
+
+# JumpMaster 编码规范（唯一来源）
+
+适用于仓库内所有 Kotlin / Compose 相关修改；与多模块结构（`app`、`core/*`、`feature/*`）一致。
+
+## 1. 复杂度阈值（硬约束）
+
+- **圈复杂度**：单函数不超过 **10**；避免深层嵌套的 `if-else` / `when`。
+- **函数长度**：单函数体不超过 **40 行**（含注释）；复杂逻辑必须拆解。
+- **文件规模**：单 Kotlin 文件不超过 **200 行**（含 `import` 与空行）；超出则按功能拆分或提取工具类。UI 可拆为 `XxxScreen.kt`、`XxxContent.kt`、`XxxComponents.kt` 或按 feature 子包拆分。
+- **Compose 嵌套**：单个 `@Composable` 内建议不超过约 **5 层**；超出则提取子 Composable。
+
+## 2. 技术栈与架构
+
+- **MVVM & Flow**：`ViewModel` 仅通过 `StateFlow` / `SharedFlow` 暴露数据；禁止持有 `Context` / `View` / `Fragment`；异步使用 `viewModelScope`。
+- **Compose**：无状态 UI；状态提升到调用处或 `ViewModel`；高频变化用 `remember` / `derivedStateOf`；`LaunchedEffect` / `DisposableEffect` 必须写清 **key**。
+- **Hilt**：优先构造函数注入；`ViewModel` 使用 `@HiltViewModel`。
+- **Room**：访问仅在 `Dao` + `Repository`；磁盘 IO 不在主线程，使用 `Dispatchers.IO`。
+- **MediaPipe & CameraX**：CameraX 与 Pose Landmarker 解耦；检测结果经自定义类型（如 `AnalysisResult`）交给 UI；注意资源释放与多线程回调的空安全与生命周期。
+- **代码风格**：可用 `let` / `apply` / `run` / `also` 减少重复，**禁止超过 3 层**嵌套作用域。
+
+## 3. Compose UI 补充
+
+- **组件复用**：同一形态出现 2 次及以上须提取为独立 `@Composable`（同 feature 的 `*Components.kt` 或 `core/designsystem`）；用参数表达差异；Screen 只做组合与回调绑定。
+- **主题与 Modifier**：优先 `MaterialTheme` / `theme` token，少写死色值；`Modifier` 链顺序与邻近代码一致（尺寸 → 行为 → 外观 → 语义）。
+- **预览**：可复用块尽量提供 `@Preview`（至少 light）。
+- **Composable 边界**：不在 Composable 内直接访问 `Dao` / `Repository` / `Dispatchers.IO`。

@@ -49,6 +49,13 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:designsystem"))
+    implementation(project(":core:data"))
+    implementation(project(":core:domain"))
+    implementation(project(":feature:counter"))
+    implementation(project(":feature:history"))
+    implementation(project(":feature:profile"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -65,13 +72,6 @@ dependencies {
 
     implementation(libs.hilt.android)
     kapt(libs.hilt.compiler)
-
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    kapt(libs.androidx.room.compiler)
-
-    implementation(libs.bundles.camerax)
-    implementation(libs.mediapipe.tasks.vision)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 
