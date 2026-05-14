@@ -23,7 +23,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -93,7 +92,7 @@ fun RecordItem(
                         Icons.Default.LocalFireDepartment,
                         contentDescription = null,
                         modifier = Modifier.size(14.dp),
-                        tint = Color(0xFFEF4444),
+                        tint = MaterialTheme.colorScheme.tertiary,
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(

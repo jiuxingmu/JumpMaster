@@ -49,44 +49,38 @@ fun SettingsSection() {
         SettingsItem(
             icon = Icons.Default.WorkspacePremium,
             label = "会员资格",
-            iconTint = Color(0xFFF59E0B),
         )
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         SettingsItem(
             icon = Icons.Default.Share,
             label = "分享使用体验送会员",
-            iconTint = Color(0xFF10B981),
             badge = "新",
         )
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         SettingsItem(
             icon = Icons.Default.Info,
             label = "入门指南",
-            iconTint = Color(0xFF3B82F6),
         )
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         SettingsItem(
             icon = Icons.Default.FitnessCenter,
             label = "授权访问健康数据",
-            iconTint = Color(0xFFEC4899),
         )
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         SettingsItem(
             icon = Icons.Default.Favorite,
             label = "心率区间",
-            iconTint = Color(0xFFEF4444),
         )
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         SettingsItem(
             icon = Icons.Default.Redeem,
             label = "兑换码",
-            iconTint = Color(0xFF8B5CF6),
         )
         Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
         SettingsItem(
             icon = Icons.Default.Settings,
             label = "设置",
-            iconTint = Color(0xFF6B7280),
+            iconTint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -113,7 +107,12 @@ fun SettingsItem(
                 icon,
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
-                tint = iconTint,
+                tint =
+                    if (iconTint == Color.Unspecified) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        iconTint
+                    },
             )
             Spacer(modifier = Modifier.width(16.dp))
             Text(
@@ -130,7 +129,7 @@ fun SettingsItem(
                 Box(
                     modifier = Modifier
                         .background(
-                            Color(0xFFEF4444),
+                            MaterialTheme.colorScheme.error,
                             RoundedCornerShape(4.dp),
                         )
                         .padding(horizontal = 6.dp, vertical = 2.dp),
@@ -139,7 +138,7 @@ fun SettingsItem(
                         text = it,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onError,
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))

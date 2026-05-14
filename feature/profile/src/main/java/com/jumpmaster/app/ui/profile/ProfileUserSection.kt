@@ -23,7 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -53,7 +52,7 @@ fun UserInfoCard() {
                     modifier = Modifier
                         .size(80.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFF59E0B)),
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
                 ) {
                     Image(
                         painter = painterResource(id = android.R.drawable.ic_menu_gallery),
@@ -79,7 +78,7 @@ fun UserInfoCard() {
                         Box(
                             modifier = Modifier
                                 .background(
-                                    Color(0xFFFBBF24),
+                                    MaterialTheme.colorScheme.secondaryContainer,
                                     RoundedCornerShape(8.dp),
                                 )
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
@@ -88,7 +87,7 @@ fun UserInfoCard() {
                                 text = "Lv.5",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.Black,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                         }
                     }
