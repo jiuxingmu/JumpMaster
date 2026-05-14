@@ -31,6 +31,9 @@ fun List<JumpRecord>.toDailySummaries(): List<DailySummary> =
         }
         .sortedByDescending { it.date }
 
+private fun Map<String, List<JumpRecord>>.toDailySummariesByMonth(): Map<String, List<DailySummary>> =
+    mapValues { (_, monthRecords) -> monthRecords.toDailySummaries() }
+
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
     private val jumpRepository: JumpRepository,
@@ -38,6 +41,10 @@ class HistoryViewModel @Inject constructor(
 
     private val _recordsByMonth = MutableStateFlow<Map<String, List<JumpRecord>>>(emptyMap())
     val recordsByMonth: StateFlow<Map<String, List<JumpRecord>>> = _recordsByMonth.asStateFlow()
+
+    private val _dailySummariesByMonth = MutableStateFlow<Map<String, List<DailySummary>>>(emptyMap())
+    val dailySummariesByMonth: StateFlow<Map<String, List<DailySummary>>> =
+        _dailySummariesByMonth.asStateFlow()
 
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -51,7 +58,7 @@ class HistoryViewModel @Inject constructor(
             _isLoading.value = true
             try {
                 val records = jumpRepository.getRecordsGroupedByMonth()
-                _recordsByMonth.value = records
+                applyRecords(records)
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -66,7 +73,7 @@ class HistoryViewModel @Inject constructor(
             try {
                 jumpRepository.seedDemoRecords()
                 val records = jumpRepository.getRecordsGroupedByMonth()
-                _recordsByMonth.value = records
+                applyRecords(records)
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -85,5 +92,10 @@ class HistoryViewModel @Inject constructor(
     fun formatWeekday(date: LocalDate): String {
         val weekdays = arrayOf("星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六")
         return weekdays[date.dayOfWeek.value % 7]
+    }
+
+    private fun applyRecords(records: Map<String, List<JumpRecord>>) {
+        _recordsByMonth.value = records
+        _dailySummariesByMonth.value = records.toDailySummariesByMonth()
     }
 }
