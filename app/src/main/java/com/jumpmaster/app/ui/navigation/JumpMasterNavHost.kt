@@ -1,19 +1,22 @@
 package com.jumpmaster.app.ui.navigation
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.Badge
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -21,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -29,7 +33,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.jumpmaster.app.ui.history.HistoryScreen
-import com.jumpmaster.app.ui.main.MainScreen
+import com.jumpmaster.app.ui.main.CounterHomeScreen
+import com.jumpmaster.app.ui.main.CounterTrainingScreen
 import com.jumpmaster.app.ui.profile.ProfileScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,37 +45,61 @@ fun JumpMasterNavHost(
 ) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    val currentRoute = currentDestination?.route
+    val hideBottomBar = currentRoute == AppRoutes.COUNTER_TRAINING
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets.safeDrawing.only(
-            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
-        ),
+        contentWindowInsets =
+            WindowInsets.safeDrawing.only(
+                WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
+            ),
         bottomBar = {
-            NavigationBar {
-                navItems.forEach { navItem ->
-                    val isSelected =
-                        currentDestination?.hierarchy?.any { it.route == navItem.route } == true
-
-                    NavigationBarItem(
-                        icon = {
-                            BadgedIcon(
-                                icon = { Icon(navItem.icon, contentDescription = navItem.label) },
-                                badgeCount = navItem.badgeCount,
-                            )
-                        },
-                        label = { Text(navItem.label) },
-                        selected = isSelected,
-                        onClick = {
-                            navController.navigate(navItem.route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+            if (!hideBottomBar) {
+                NavigationBar {
+                    navItems.forEach { navItem ->
+                        val isSelected =
+                            currentDestination?.hierarchy?.any { it.route == navItem.route } == true ||
+                                (navItem.route == AppRoutes.COUNTER &&
+                                    currentRoute == AppRoutes.COUNTER_TRAINING)
+                        NavigationBarItem(
+                            icon = {
+                                BadgedIcon(
+                                    icon = {
+                                        Icon(
+                                            navItem.icon,
+                                            contentDescription = navItem.label,
+                                        )
+                                    },
+                                    badgeCount = navItem.badgeCount,
+                                )
+                            },
+                            label = {
+                                AnimatedVisibility(
+                                    visible = isSelected,
+                                    enter = fadeIn(),
+                                    exit = fadeOut(),
+                                ) {
+                                    Text(
+                                        text = navItem.label,
+                                        color = LocalContentColor.current,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                 }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                    )
+                            },
+                            selected = isSelected,
+                            alwaysShowLabel = false,
+                            onClick = {
+                                navController.navigate(navItem.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                        )
+                    }
                 }
             }
         },
@@ -78,10 +107,31 @@ fun JumpMasterNavHost(
         NavHost(
             navController = navController,
             startDestination = AppRoutes.COUNTER,
-            modifier = Modifier.padding(innerPadding),
+            modifier =
+                if (hideBottomBar) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier.padding(innerPadding).fillMaxSize()
+                },
         ) {
-            composable(AppRoutes.COUNTER) {
-                MainScreen()
+            composable(
+                route = AppRoutes.COUNTER,
+                exitTransition = { counterHomeExitToTraining() },
+                popEnterTransition = { counterHomePopEnterFromTraining() },
+            ) {
+                CounterHomeScreen(
+                    onOpenTraining = { navController.navigate(AppRoutes.COUNTER_TRAINING) },
+                )
+            }
+
+            composable(
+                route = AppRoutes.COUNTER_TRAINING,
+                enterTransition = { trainingEnter() },
+                popExitTransition = { trainingPopExit() },
+            ) {
+                CounterTrainingScreen(
+                    onNavigateUp = { navController.popBackStack() },
+                )
             }
 
             composable(AppRoutes.HISTORY) {
@@ -110,23 +160,24 @@ private fun BadgedIcon(
     }
 }
 
-private val navItems = listOf(
-    NavItem(
-        route = AppRoutes.COUNTER,
-        label = "开始",
-        icon = Icons.Default.FitnessCenter,
-    ),
-    NavItem(
-        route = AppRoutes.HISTORY,
-        label = "历史",
-        icon = Icons.Default.History,
-    ),
-    NavItem(
-        route = AppRoutes.PROFILE,
-        label = "我的",
-        icon = Icons.Default.Person,
-    ),
-)
+private val navItems =
+    listOf(
+        NavItem(
+            route = AppRoutes.COUNTER,
+            label = "开始",
+            icon = Icons.Outlined.FitnessCenter,
+        ),
+        NavItem(
+            route = AppRoutes.HISTORY,
+            label = "历史",
+            icon = Icons.Outlined.History,
+        ),
+        NavItem(
+            route = AppRoutes.PROFILE,
+            label = "我的",
+            icon = Icons.Outlined.Person,
+        ),
+    )
 
 private data class NavItem(
     val route: String,

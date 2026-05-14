@@ -23,8 +23,9 @@ fun CameraBindingEffect(
     onAnalyzeFrame: (ImageProxy, Boolean) -> Unit,
     onCameraBindErrorChange: (String?) -> Unit,
     onFirstAnalyzerFrame: () -> Unit,
+    rebindNonce: Int = 0,
 ) {
-    DisposableEffect(cameraProvider, cameraPermissionGranted, lifecycleOwner, useFrontCamera) {
+    DisposableEffect(cameraProvider, cameraPermissionGranted, lifecycleOwner, useFrontCamera, rebindNonce) {
         val provider = cameraProvider
         if (provider == null || !cameraPermissionGranted) return@DisposableEffect onDispose { }
 

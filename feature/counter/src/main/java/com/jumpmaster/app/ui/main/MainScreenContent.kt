@@ -2,11 +2,12 @@ package com.jumpmaster.app.ui.main
 
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -16,7 +17,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
@@ -27,7 +27,6 @@ enum class OverlayRenderMode {
 
 @Composable
 fun MainCameraContent(
-    innerPadding: PaddingValues,
     cameraPermissionGranted: Boolean,
     onRequestPermission: () -> Unit,
     previewView: PreviewView,
@@ -37,26 +36,63 @@ fun MainCameraContent(
     overlayRenderMode: OverlayRenderMode,
     hint: String,
     jumpCount: Int,
-    onSaveSession: () -> Unit,
+    trainingState: TrainingSessionState,
+    poseEngineRetrySuggested: Boolean,
+    onRetryPoseEngine: () -> Unit,
+    onRetryCameraBind: () -> Unit,
+    onToggleActivePause: () -> Unit,
+    onRequestEndTraining: () -> Unit,
 ) {
-    Box(
-        modifier =
-            Modifier
-                .padding(innerPadding)
-                .fillMaxSize(),
-    ) {
+    val sessionStarted = trainingState != TrainingSessionState.Idle
+
+    Box(modifier = Modifier.fillMaxSize()) {
         if (!cameraPermissionGranted) {
             CameraPermissionGate(onRequestPermission = onRequestPermission)
             return@Box
         }
 
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        CameraArFocusOverlay(Modifier.fillMaxSize())
         poseOverlayPoints?.let { PoseKeypointOverlay(points = it, mode = overlayRenderMode) }
-        cameraBindError?.let { ErrorMessageCard(message = it) }
-        if (cameraBindError == null && !hasAnalyzerFrames) WaitingFrameCard()
-        HintCard(hint = hint)
-        CounterCard(count = jumpCount)
-        SaveButton(onClick = onSaveSession, jumpCount = jumpCount)
+        if (cameraBindError != null) {
+            CameraBindFriendlyBanner(
+                onRetry = onRetryCameraBind,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        } else if (poseEngineRetrySuggested) {
+            TrainingEngineIssueBanner(
+                onRetry = onRetryPoseEngine,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+        if (cameraBindError == null && !hasAnalyzerFrames) {
+            WaitingFrameCard()
+        }
+
+        if (sessionStarted) {
+            if (!poseEngineRetrySuggested) {
+                HintCard(hint = hint)
+            }
+            SessionCounterHud(
+                count = jumpCount,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .statusBarsPadding(),
+            )
+            SessionTrainingControls(
+                trainingState = trainingState,
+                onToggleActivePause = onToggleActivePause,
+                onRequestEndTraining = onRequestEndTraining,
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 20.dp),
+            )
+        } else {
+            TrainingIdleStartOverlay(onStart = onToggleActivePause)
+        }
     }
 }
 
@@ -116,28 +152,11 @@ private fun CameraPermissionGate(onRequestPermission: () -> Unit) {
 }
 
 @Composable
-private fun BoxScope.ErrorMessageCard(message: String) {
-    Surface(
-        modifier = Modifier.align(Alignment.Center).padding(16.dp),
-        tonalElevation = 6.dp,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
-    ) {
-        Text(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            text = message,
-            color = MaterialTheme.colorScheme.onErrorContainer,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
-
-@Composable
 private fun BoxScope.WaitingFrameCard() {
     Surface(
         modifier = Modifier.align(Alignment.Center).padding(16.dp),
         tonalElevation = 4.dp,
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
     ) {
         Text(
@@ -151,49 +170,18 @@ private fun BoxScope.WaitingFrameCard() {
 @Composable
 private fun BoxScope.HintCard(hint: String) {
     Surface(
-        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp),
+        modifier =
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 168.dp, start = 16.dp, end = 16.dp),
         tonalElevation = 4.dp,
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
     ) {
         Text(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
             text = hint,
             style = MaterialTheme.typography.bodyMedium,
-        )
-    }
-}
-
-@Composable
-private fun BoxScope.CounterCard(count: Int) {
-    Surface(
-        modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp),
-        tonalElevation = 6.dp,
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.94f),
-    ) {
-        Text(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-            text = "计数：$count",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-@Composable
-private fun BoxScope.SaveButton(onClick: () -> Unit, jumpCount: Int) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .padding(bottom = 96.dp),
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Text(
-            text = if (jumpCount > 0) "保存记录 (" + jumpCount + " 个)" else "保存记录",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
         )
     }
 }

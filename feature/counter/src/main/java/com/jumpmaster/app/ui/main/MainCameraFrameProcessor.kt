@@ -18,6 +18,8 @@ internal class MainCameraFrameProcessor(
     private val hint: MutableStateFlow<String>,
     private val poseOverlayPoints: MutableStateFlow<PoseOverlayPoints?>,
     private val jumpCount: () -> Int,
+    private val isCountingActive: () -> Boolean,
+    private val onRecoverablePoseFailure: () -> Unit,
 ) {
 
     private var frameCounter: Int = 0
@@ -51,7 +53,7 @@ internal class MainCameraFrameProcessor(
             imageProxy.close()
             val msg = it.message ?: it.javaClass.simpleName
             Log.e(MainViewModel.TAG, "PoseLandmarker acquire failed: $msg", it)
-            hint.value = "Pose 模型初始化失败：$msg"
+            onRecoverablePoseFailure()
             null
         }
 
@@ -71,7 +73,7 @@ internal class MainCameraFrameProcessor(
             runCatching { landmarker.detectForVideo(mpImage, stampMs) }
                 .onFailure {
                     Log.e(MainViewModel.TAG, "detectForVideo failed: ${it.message}", it)
-                    hint.value = "姿态推断异常：${it.message ?: it.javaClass.simpleName}"
+                    onRecoverablePoseFailure()
                 }
                 .getOrNull()
         oriented.recycle()
@@ -99,7 +101,12 @@ internal class MainCameraFrameProcessor(
         noPoseStreak = 0
         lastFrameState = FrameState.VALID
         val nowElapsed = SystemClock.elapsedRealtime()
-        val counted = detector.onRawHipY(valid.hipY, nowElapsed)
+        val counted =
+            if (isCountingActive()) {
+                detector.onRawHipY(valid.hipY, nowElapsed)
+            } else {
+                false
+            }
         frameCounter += 1
         logDetectorState(valid.hipY, valid.stampMs, nowElapsed, counted)
         updateHintThrottled()
@@ -182,10 +189,6 @@ internal class MainCameraFrameProcessor(
 
     private fun updateHintThrottled() {
         if (frameCounter % 8 != 0) return
-        val hipF = detector.lastFilteredY
-        val base = detector.lastBaselineY
-        val delta = detector.lastDeltaThreshold
-        val diff = if (!hipF.isNaN() && !base.isNaN()) base - hipF else Float.NaN
-        hint.value = "hip=%.3f base=%.3f diff=%.3f Δ=%.3f".format(hipF, base, diff, delta)
+        hint.value = TrainingFriendlyCopy.COACHING_RHYTHM
     }
 }
